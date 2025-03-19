@@ -58,7 +58,7 @@ The script will display:
 ![screenshot](/screenshots/center.jpg)  
 
 - **-color (value)**  
-  Sets the color of the battery frame. Accepts a number between 0 and 255.
+  Sets the color of the battery frame. Accepts a number between 0 and 255 (ANSI 256colors).
 
 ![screenshot](/screenshots/color.jpg)  
 
