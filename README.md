@@ -25,7 +25,7 @@ pkg install jq
 ### How to Install the Script
 1. Clone the repository:
 ```
-git clone https://github.com/BuriXon-code/Termux-Battery.git
+git clone https://github.com/BuriXon-code/Termux-Battery
 ```
 
 2. Navigate to the script directory:
@@ -35,7 +35,7 @@ cd Termux-Battery
 
 3. Make the script executable:
 ```
-chmod +x termux-battery.sh
+chmod +x battery
 ```
 
 ## Usage
@@ -43,7 +43,7 @@ chmod +x termux-battery.sh
 ### Running the Script
 To run the script, execute:
 ```
-./termux-battery.sh
+./battery
 ```
 
 The script will display:
