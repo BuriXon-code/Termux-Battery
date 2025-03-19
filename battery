@@ -1,0 +1,274 @@
+#!/bin/bash
+
+##############################################
+# Author: Kamil BuriXon Burek (BuriXon-code) #
+# Name: Termux-Battery (c) 2025              #
+# Description: Show nice-looking battery     #
+#              inside Termux terminal        #
+# Version: v 1.0                             #
+# Changelog: release                         #
+# Todo: fix battery-movement while resizing  #
+#       in loop mode                         #
+##############################################
+
+# Check dependencies
+if ! command -v jq &> /dev/null; then
+    echo -e "\e[1;31mError: jq is not installed. Please install it first.\e[0m" >&2
+    exit 1
+fi
+if ! command -v termux-battery-status &> /dev/null; then
+    echo -e "\e[1;31mError: termux-battery-status is not installed. Please install it first.\e[0m" >&2
+    exit 1
+fi
+
+# Make sure cursor is visible
+trap 'echo -en "\e[?25h"' EXIT
+
+# Calculate spacing for centered outout
+COLS=$(tput cols)
+TMP_1=$(( COLS - 32 ))
+TMP_2=$(( TMP_1 / 2 ))
+PADDING=$(( TMP_2 - 4 ))
+CENTER=$(printf "%*s" "$PADDING" "")
+
+# Get battery data from Termux
+battery_json=$(termux-battery-status)
+percentage=$(echo "$battery_json" | jq -r '.percentage')
+temperature=$(echo "$battery_json" | jq -r '.temperature')
+status=$(echo "$battery_json" | jq -r '.status')
+temp=$(printf "%.1f" "$temperature")
+
+# Set some initial variables
+BR="\e[25;1;38;5;251m"
+SPACE=" "
+ascii=true
+loop=false
+BORDER="\e[0m"
+
+# Handle help option
+help() {
+	echo -e "\nUsage: $(basename $0) [OPTION] [PARAMETER]"
+	echo -e "\nOptions:"
+	echo -e "  -center	  	Show horizontaly centered output."
+	echo -e "  -color (value)	Set color of the battery frame."
+	echo -e "  -no-asci		Show only battery data (hide ASCII)."
+	echo -e "  -loop			Display in infinite loop with 0.5s intervals."
+	echo -e "  -level (value)	Set battery level to show."
+	echo -e "  -status (value)	Set battery status to show."
+	echo -e "  -temp (value)		Set temperature level to show."
+	echo -e "  -help			Show this message.\n"
+}
+
+# Process optional parameters
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case "$key" in
+    	# Define emulated status
+    	-help) help; exit 0;;
+        -status)
+            shift
+            if [[ -z "$1" ]]; then
+                echo -e "\e[1;31mError: -status requires a value.\e[0m" >&2
+                exit 1
+            fi
+            input_status=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+            if [[ "$input_status" != "CHARGING" && "$input_status" != "DISCHARGING" && "$input_status" != "FULL" ]]; then
+                echo -e "\e[1;31mError: Invalid status. Valid options: charging, discharging, full.\e[0m" >&2
+                exit 1
+            fi
+            status="$input_status"
+            shift
+            ;;
+        # Define emulated level
+        -level)
+            shift
+            if [[ -z "$1" ]]; then
+                echo -e "\e[1;31mError: -level requires a value.\e[0m" >&2
+                exit 1
+            fi
+            if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+                echo -e "\e[1;31mError: -level requires an positive integer value.\e[0m" >&2
+                exit 1
+            fi
+            if (( $1 < 0 || $1 > 100 )); then
+                echo -e "\e[1;31mError: -level must be between 0 and 100.\e[0m" >&2
+                exit 1
+            fi
+            percentage="$1"
+            shift
+            ;;
+        # Define emulated temperature
+        -temp)
+            shift
+            if [[ -z "$1" ]]; then
+                echo -e "\e[1;31mError: -temp requires a value.\e[0m" >&2
+                exit 1
+            fi
+            if ! [[ "$1" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                echo -e "\e[1;31mError: -temp requires a numeric value.\e[0m" >&2
+                exit 1
+            fi
+            temperature="$1"
+            temp="$1"
+            shift
+            ;;
+        # Define box color
+        -color)
+        	shift
+        	if [[ ! -z "$1" ]] && [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -le 255 ]] && [[ "$1" -ge 0 ]]; then
+        		BR="\e[38;5;${1}m"
+        		shift
+        	else
+            	echo -e "\e[1;31mError: $1 is not a valid 256 color.\e[0m" >&2
+            	echo -e "\e[1;31mLook at my 256colors repository for more info.\e[0m" >&2
+            	echo -e "\e[1;34mhttps://github.com/BuriXon-code/256colors/\e[0m" >&2
+            	exit 1
+        	fi
+        	;;
+        # Center outout data and ascii
+        -center)
+        	shift
+        	SPACE=$CENTER
+        	;;
+        # Do not show ascii
+        -no-ascii)
+        	shift
+        	ascii=false
+        	;;
+        # Run script in loop
+        -loop)
+			shift
+			loop=true
+        ;;
+        *)
+        	help
+            echo -e "\e[1;31mError: Unknown option $1.\e[0m" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Color arrays
+LEVEL_COLORS=(1 9 196 202 208 214 226 190 154 119 118 82 10 51)
+STATUS_COLORS=(1 11 10 51)
+TEMP_COLORS=(159 123 122 121 120 119 118 154 191 190 226 220 214 208 202 196 9)
+
+# Function to get color from array based on value interpolation
+get_color_from_array() {
+    local -n arr=$1
+    local min=$2
+    local max=$3
+    local value=$4
+    local size=${#arr[@]}
+
+    if (( value <= min )); then
+        echo "${arr[0]}"
+    elif (( value >= max )); then
+        echo "${arr[size-1]}"
+    else
+        local index=$(( (value - min) * (size - 1) / (max - min) ))
+        echo "${arr[index]}"
+    fi
+}
+
+# Determine battery level color (using 256 ANSI colors)
+if [[ $status == "CHARGING" ]]; then
+	BATT_COLOR="\e[5;38;5;$(get_color_from_array LEVEL_COLORS 0 100 "$percentage")m"
+	BATT_INFO_COLOR="\e[38;5;$(get_color_from_array LEVEL_COLORS 0 100 "$percentage")m"
+else
+	BATT_COLOR="\e[38;5;$(get_color_from_array LEVEL_COLORS 0 100 "$percentage")m"
+	BATT_INFO_COLOR="\e[38;5;$(get_color_from_array LEVEL_COLORS 0 100 "$percentage")m"	
+fi
+
+# Determine temperature color (using integer temperature value)
+tmp_temp=$(echo "$temperature" | awk '{print int($1)}')
+TEMP_COLOR="\e[38;5;$(get_color_from_array TEMP_COLORS 10 45 "$tmp_temp")m"
+
+# Determine status color based on battery status and level
+if [[ "$status" == "DISCHARGING" ]]; then
+    if (( percentage < 15 )); then
+        STATUS_COLOR="\e[38;5;${STATUS_COLORS[0]}m"
+    else
+        STATUS_COLOR="\e[38;5;${STATUS_COLORS[1]}m"
+    fi
+elif [[ "$status" == "CHARGING" ]]; then
+    STATUS_COLOR="\e[38;5;${STATUS_COLORS[2]}m"
+elif [[ "$status" == "FULL" ]]; then
+    STATUS_COLOR="\e[38;5;${STATUS_COLORS[3]}m"
+else
+    STATUS_COLOR="\e[38;5;244m"  # fallback for unknown status
+fi
+
+# Determine battery segments (each segment represents 20%)
+if (( percentage <= 5 )); then
+    filled=0
+elif (( percentage >= 90 )); then
+    filled=5
+else
+    filled=$(( 1 + ((percentage - 5) * 4) / 85 ))
+fi
+S1="    ${BR}"
+S2="    ${BR}"
+S3="    ${BR}"
+S4="    ${BR}"
+S5="    ${BR}"
+(( filled >= 1 )) && S1="${BATT_COLOR}████${BR}"
+(( filled >= 2 )) && S2="${BATT_COLOR}████${BR}"
+(( filled >= 3 )) && S3="${BATT_COLOR}████${BR}"
+(( filled >= 4 )) && S4="${BATT_COLOR}████${BR}"
+(( filled >= 5 )) && S5="${BATT_COLOR}████${BR}"
+
+if [[ $status == "FULL" ]]; then
+	S1="${BATT_COLOR}████${BR}"
+	S2="${BATT_COLOR}████${BR}"
+	S3="${BATT_COLOR}████${BR}"
+	S4="${BATT_COLOR}████${BR}"
+	S5="${BATT_COLOR}████${BR}"
+fi
+
+# Draw ascii
+draw() {
+    echo -e "\e[?7l\e[?25l\e[K"
+    echo -e "${BR}${SPACE}████████████████████████████████████\e[K"
+    echo -e "${BR}${SPACE}██                                ██\e[K"
+    echo -e "${BR}${SPACE}██  $S1  $S2  $S3  $S4  $S5  ████\e[K"
+    echo -e "${BR}${SPACE}██  $S1  $S2  $S3  $S4  $S5  ████\e[K"
+    echo -e "${BR}${SPACE}██  $S1  $S2  $S3  $S4  $S5  ████\e[K"
+    echo -e "${BR}${SPACE}██  $S1  $S2  $S3  $S4  $S5  ████\e[K"
+    echo -e "${BR}${SPACE}██  $S1  $S2  $S3  $S4  $S5  ████\e[K"
+    echo -e "${BR}${SPACE}██                                ██\e[K"
+    echo -e "${BR}${SPACE}████████████████████████████████████\e[K"
+    echo -e "\e[K"
+}
+
+# Display output
+display() {
+	if $ascii; then
+		draw
+	else
+		echo -e "\e[?7l\e[?25l"
+	fi
+
+	# Display additional information in English
+	echo -e "${BR}${SPACE}Status: ${STATUS_COLOR}${status}${BORDER}\e[K"
+	echo -e "${BR}${SPACE}Level: ${BATT_INFO_COLOR}${percentage}%${BORDER}\e[K"
+	echo -e "${BR}${SPACE}Temperature: ${TEMP_COLOR}${temp}°C${BORDER}\e[K"
+	echo -e "\e[?7h"
+}
+
+# Run in specified mode
+if $loop; then
+	if $ascii; then
+		A=15
+	else
+		A=5
+	fi
+	while true; do
+		display
+		echo -en "\e[${A}A"
+		sleep 0.5
+	done
+else
+	display
+	echo -en "\e[?25h"
+fi
