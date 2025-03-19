@@ -57,6 +57,8 @@ help() {
 	echo -e "  -status (value)	Set battery status to show."
 	echo -e "  -temp (value)		Set temperature level to show."
 	echo -e "  -help			Show this message.\n"
+	echo -e "To preview ANSI 256colors check my repo:\n"
+	echo -e "https://github.com/BuriXon-code/256colors/\n"
 }
 
 # Process optional parameters
